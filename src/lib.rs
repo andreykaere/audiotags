@@ -140,20 +140,31 @@ impl Tag {
         &self,
         path: impl AsRef<Path>,
     ) -> crate::Result<Box<dyn AudioTag + Send + Sync>> {
-        match self.tag_type.unwrap_or(TagType::try_from_ext(
-            path.as_ref()
-                .extension()
-                .ok_or(Error::UnknownFileExtension(String::new()))?
-                .to_string_lossy()
-                .to_string()
-                .to_lowercase()
-                .as_str(),
-        )?) {
-            TagType::Id3v2 => Ok(Box::new({
-                let mut t = Id3v2Tag::read_from_path(path)?;
-                t.set_config(self.config);
-                t
-            })),
+        let ext = path
+            .as_ref()
+            .extension()
+            .ok_or(Error::UnknownFileExtension(String::new()))?
+            .to_string_lossy()
+            .to_string()
+            .to_lowercase();
+
+        match self.tag_type.unwrap_or(TagType::try_from_ext(&ext)?) {
+            TagType::Id3v2 => match ext.as_str() {
+                "mp3" => Ok(Box::new({
+                    let mut t = Id3v2Tag::read_from_path(path)?;
+                    t.set_config(self.config);
+                    t
+                })),
+
+                "wav" => Ok(Box::new({
+                    let mut t = Id3v2Tag::read_from_wav_path(path)?;
+                    t.set_config(self.config);
+                    t
+                })),
+
+                _ => unimplemented!(),
+            },
+
             TagType::Mp4 => Ok(Box::new({
                 let mut t = Mp4Tag::read_from_path(path)?;
                 t.set_config(self.config);
@@ -193,7 +204,7 @@ pub enum TagType {
 impl TagType {
     fn try_from_ext(ext: &str) -> crate::Result<Self> {
         match ext {
-                                                     "mp3" => Ok(Self::Id3v2),
+                                             "mp3" | "wav" => Ok(Self::Id3v2),
             "m4a" | "m4b" | "m4p" | "m4v" | "isom" | "mp4" => Ok(Self::Mp4),
                                                     "flac" => Ok(Self::Flac),
             p => Err(crate::Error::UnsupportedFormat(p.to_owned())),

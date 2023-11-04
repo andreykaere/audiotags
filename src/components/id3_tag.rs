@@ -5,6 +5,17 @@ pub use id3::Tag as Id3v2InnerTag;
 
 impl_tag!(Id3v2Tag, Id3v2InnerTag, TagType::Id3v2);
 
+impl Id3v2Tag {
+    pub fn read_from_wav_path(path: impl AsRef<Path>) -> crate::Result<Self> {
+        let inner_tag = Id3v2InnerTag::read_from_wav_path(&path)?;
+
+        Ok(Self {
+            inner: inner_tag,
+            config: Config::default(),
+        })
+    }
+}
+
 impl<'a> From<&'a Id3v2Tag> for AnyTag<'a> {
     fn from(inp: &'a Id3v2Tag) -> Self {
         Self {
@@ -163,7 +174,9 @@ impl AudioTagEdit for Id3v2Tag {
     fn album_cover(&self) -> Option<Picture> {
         self.inner
             .pictures()
-            .find(|&pic| matches!(pic.picture_type, id3::frame::PictureType::CoverFront))
+            .find(|&pic| {
+                matches!(pic.picture_type, id3::frame::PictureType::CoverFront)
+            })
             .and_then(|pic| {
                 Some(Picture {
                     data: &pic.data,
@@ -186,7 +199,9 @@ impl AudioTagEdit for Id3v2Tag {
     }
 
     fn composer(&self) -> Option<&str> {
-        if let Some(Content::Text(text)) = self.inner.get("TCOM").map(Frame::content) {
+        if let Some(Content::Text(text)) =
+            self.inner.get("TCOM").map(Frame::content)
+        {
             return Some(text);
         }
 
@@ -275,7 +290,22 @@ impl AudioTagWrite for Id3v2Tag {
         Ok(())
     }
     fn write_to_path(&mut self, path: &str) -> crate::Result<()> {
-        self.inner.write_to_path(path, id3::Version::Id3v24)?;
+        let ext = Path::new(path)
+            .extension()
+            .ok_or(Error::UnknownFileExtension(String::new()))?
+            .to_string_lossy()
+            .to_string()
+            .to_lowercase();
+
+        match ext.as_str() {
+            "mp3" => self.inner.write_to_path(path, id3::Version::Id3v24)?,
+            "wav" => {
+                self.inner.write_to_wav_path(path, id3::Version::Id3v24)?
+            }
+
+            _ => unimplemented!(),
+        }
+
         Ok(())
     }
 }
